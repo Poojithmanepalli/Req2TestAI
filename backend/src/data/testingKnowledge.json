@@ -1,0 +1,352 @@
+[
+  {
+    "id": "TK001",
+    "category": "Authentication",
+    "pattern": "Login and credential validation",
+    "description": "Testing user login with valid/invalid credentials, account lockout, and secure session creation",
+    "applicable_keywords": ["login", "authenticate", "credential", "sign in", "access"],
+    "test_strategies": [
+      "Valid username + valid password → successful login and session created",
+      "Valid username + wrong password → error message, no session created",
+      "Non-existent user → generic error (avoid enumeration)",
+      "Account locked after N failed attempts → lockout message shown",
+      "Empty username or password fields → validation error before submission"
+    ]
+  },
+  {
+    "id": "TK002",
+    "category": "User Registration",
+    "pattern": "User registration and account creation",
+    "description": "Testing new user signup with field validation, duplicate detection, and confirmation flows",
+    "applicable_keywords": ["register", "sign up", "create account", "enroll", "onboard"],
+    "test_strategies": [
+      "All required fields filled correctly → account created, confirmation sent",
+      "Duplicate email/username → error message indicating already exists",
+      "Missing required fields → field-level validation errors shown",
+      "Password does not meet complexity rules → descriptive error displayed",
+      "Successful registration → redirect to dashboard or confirmation page"
+    ]
+  },
+  {
+    "id": "TK003",
+    "category": "Password Management",
+    "pattern": "Password reset and change flows",
+    "description": "Testing forgot password, reset link, and password change with old password verification",
+    "applicable_keywords": ["password", "reset", "forgot", "change password", "recover"],
+    "test_strategies": [
+      "Valid registered email → reset link sent, link expires after defined time",
+      "Unknown email → no indication of whether email exists (security)",
+      "Used/expired reset link → access denied with expiry message",
+      "New password same as old → validation error",
+      "Change password with wrong current password → denied"
+    ]
+  },
+  {
+    "id": "TK004",
+    "category": "Role-Based Access Control",
+    "pattern": "Role and permission enforcement",
+    "description": "Testing that users can only access features and data permitted by their assigned role",
+    "applicable_keywords": ["role", "permission", "access control", "admin", "authorization", "privilege"],
+    "test_strategies": [
+      "Admin user → can access all management features",
+      "Regular user → restricted pages return 403 or redirect",
+      "Privilege escalation attempt via URL manipulation → denied",
+      "Role change takes effect without requiring re-login (or with, as designed)",
+      "Feature visibility matches role: UI elements hidden for unauthorized roles"
+    ]
+  },
+  {
+    "id": "TK005",
+    "category": "Session Management",
+    "pattern": "Session lifecycle and timeout",
+    "description": "Testing session creation, persistence, expiry, and invalidation on logout",
+    "applicable_keywords": ["session", "timeout", "logout", "token", "cookie", "idle"],
+    "test_strategies": [
+      "Idle beyond timeout → session expired, redirect to login",
+      "Logout → session invalidated, back button does not restore session",
+      "Concurrent sessions from different devices → as per policy (allowed or blocked)",
+      "Session token not exposed in URL",
+      "Remember-me functionality persists session across browser close for defined period"
+    ]
+  },
+  {
+    "id": "TK006",
+    "category": "Data Validation",
+    "pattern": "Input validation and boundary checking",
+    "description": "Testing field-level validation including required fields, formats, length limits, and data types",
+    "applicable_keywords": ["validate", "input", "form", "required", "format", "field"],
+    "test_strategies": [
+      "Submit with all fields empty → all required fields highlighted",
+      "Email field with invalid format → format validation error",
+      "Text field exceeding max length → truncated or rejected with message",
+      "Numeric field with alphabetic input → type validation error",
+      "SQL injection string in text field → sanitized, no DB error exposed"
+    ]
+  },
+  {
+    "id": "TK007",
+    "category": "Boundary Value Analysis",
+    "pattern": "Boundary value testing for numeric and date inputs",
+    "description": "Testing at minimum, maximum, just-below, and just-above boundary values for all ranges",
+    "applicable_keywords": ["limit", "maximum", "minimum", "range", "threshold", "capacity", "concurrent"],
+    "test_strategies": [
+      "Input at exact minimum value → accepted",
+      "Input at exact maximum value → accepted",
+      "Input one unit below minimum → rejected with appropriate message",
+      "Input one unit above maximum → rejected with appropriate message",
+      "Input at midpoint of valid range → accepted normally"
+    ]
+  },
+  {
+    "id": "TK008",
+    "category": "Search and Filter",
+    "pattern": "Search, filter, and sort operations",
+    "description": "Testing search functionality with valid, partial, empty, and special character queries",
+    "applicable_keywords": ["search", "filter", "sort", "query", "find", "lookup"],
+    "test_strategies": [
+      "Search with exact match keyword → correct results returned",
+      "Search with partial keyword → partial matches returned",
+      "Search with no matching keyword → empty state with appropriate message",
+      "Empty search query → all results or prompt for input",
+      "Search with special characters → handled gracefully, no error"
+    ]
+  },
+  {
+    "id": "TK009",
+    "category": "CRUD Operations",
+    "pattern": "Create, Read, Update, Delete data operations",
+    "description": "Testing full lifecycle of data records including persistence and cascading effects",
+    "applicable_keywords": ["create", "add", "update", "edit", "delete", "remove", "manage", "record"],
+    "test_strategies": [
+      "Create new record with valid data → saved, appears in list",
+      "Read/view record → correct data displayed",
+      "Update record fields → changes persisted after page refresh",
+      "Delete record → removed from list, confirmation dialog shown",
+      "Delete record referenced by other data → cascading behavior handled correctly"
+    ]
+  },
+  {
+    "id": "TK010",
+    "category": "File Upload",
+    "pattern": "File upload validation and processing",
+    "description": "Testing file upload with valid/invalid types, size limits, and processing feedback",
+    "applicable_keywords": ["upload", "file", "document", "attachment", "import", "pdf", "image"],
+    "test_strategies": [
+      "Upload valid file type within size limit → accepted, processing begins",
+      "Upload unsupported file type → rejected with allowed types listed",
+      "Upload file exceeding size limit → rejected with size limit message",
+      "Upload empty/corrupt file → handled gracefully with error message",
+      "Multiple file uploads → all processed, progress shown per file"
+    ]
+  },
+  {
+    "id": "TK011",
+    "category": "Notifications",
+    "pattern": "Notification delivery and management",
+    "description": "Testing real-time and scheduled notifications across channels (in-app, email, SMS)",
+    "applicable_keywords": ["notification", "alert", "notify", "remind", "email", "sms", "push"],
+    "test_strategies": [
+      "Triggering event occurs → notification delivered within defined time",
+      "User with notifications disabled → no notification sent",
+      "Notification contains correct recipient, subject, and content",
+      "User can mark notification as read → status updates correctly",
+      "Bulk notifications → all recipients receive within SLA, no duplicates"
+    ]
+  },
+  {
+    "id": "TK012",
+    "category": "Payment Processing",
+    "pattern": "Payment transactions and billing",
+    "description": "Testing payment flows with valid/invalid cards, network failures, and refunds",
+    "applicable_keywords": ["payment", "billing", "invoice", "transaction", "refund", "charge", "subscription"],
+    "test_strategies": [
+      "Valid card + sufficient funds → payment processed, confirmation shown",
+      "Invalid card number → payment declined, user notified",
+      "Network timeout during payment → transaction not double-charged, retry option shown",
+      "Refund initiated → amount returned within defined period, record updated",
+      "Payment receipt/invoice generated with correct amount and details"
+    ]
+  },
+  {
+    "id": "TK013",
+    "category": "Performance Testing",
+    "pattern": "Response time and load testing",
+    "description": "Testing system behaviour under normal and peak load with response time assertions",
+    "applicable_keywords": ["performance", "response time", "concurrent", "load", "throughput", "latency", "users"],
+    "test_strategies": [
+      "Single user request → response within defined SLA (e.g. <2s)",
+      "Defined number of concurrent users → all requests served within SLA",
+      "Peak load simulation → no server errors, graceful degradation if overloaded",
+      "Sustained load over defined duration → no memory leak or performance degradation",
+      "Database queries under load → remain within acceptable execution time"
+    ]
+  },
+  {
+    "id": "TK014",
+    "category": "Security Testing",
+    "pattern": "Security vulnerability and encryption testing",
+    "description": "Testing for common vulnerabilities: injection, XSS, CSRF, data exposure, and encryption",
+    "applicable_keywords": ["security", "encrypt", "ssl", "tls", "aes", "hash", "bcrypt", "gdpr", "compliance"],
+    "test_strategies": [
+      "SQL injection in input fields → query not executed, input sanitized",
+      "XSS script in text field → script not rendered in browser",
+      "Sensitive data in API responses → passwords/tokens never exposed in plaintext",
+      "HTTPS enforced → HTTP requests redirected to HTTPS",
+      "Encrypted data at rest → verified via storage inspection or audit log"
+    ]
+  },
+  {
+    "id": "TK015",
+    "category": "Report Generation",
+    "pattern": "Report and export functionality",
+    "description": "Testing report generation with correct data, filters, formats, and download",
+    "applicable_keywords": ["report", "export", "download", "analytics", "generate", "pdf", "excel", "csv"],
+    "test_strategies": [
+      "Generate report with default settings → file downloaded with correct data",
+      "Apply date/category filter → report reflects only filtered data",
+      "Export in different formats (PDF, Excel, CSV) → each format correct",
+      "Report with no data for selected period → empty state handled gracefully",
+      "Large dataset export → completes without timeout, all records included"
+    ]
+  },
+  {
+    "id": "TK016",
+    "category": "Dashboard & Analytics",
+    "pattern": "Dashboard data accuracy and visualisation",
+    "description": "Testing that dashboard metrics, charts, and KPIs reflect accurate and up-to-date data",
+    "applicable_keywords": ["dashboard", "analytics", "chart", "graph", "metric", "kpi", "statistics", "real-time"],
+    "test_strategies": [
+      "Dashboard loads → all widgets display current data within defined freshness window",
+      "Underlying data changes → dashboard reflects change within defined interval",
+      "Date range filter applied → all charts update to show filtered period",
+      "Drill-down on chart element → detailed view shows correct subset",
+      "Dashboard with no data → empty state shown, no broken charts"
+    ]
+  },
+  {
+    "id": "TK017",
+    "category": "API Integration",
+    "pattern": "Third-party API and integration testing",
+    "description": "Testing external API calls, authentication, error handling, and data mapping",
+    "applicable_keywords": ["api", "integration", "third-party", "webhook", "external", "sync", "connect"],
+    "test_strategies": [
+      "Valid API credentials → integration authenticated, data fetched correctly",
+      "Invalid API key → graceful error, user-friendly message shown",
+      "External API timeout → retry logic applied, fallback behaviour triggered",
+      "API returns unexpected data format → mapping handles gracefully, no crash",
+      "Webhook received → processed correctly, stored, triggers expected action"
+    ]
+  },
+  {
+    "id": "TK018",
+    "category": "Real-time Updates",
+    "pattern": "Real-time data push and synchronisation",
+    "description": "Testing WebSocket, SSE, or polling-based real-time updates across clients",
+    "applicable_keywords": ["real-time", "live", "update", "sync", "broadcast", "websocket", "stream"],
+    "test_strategies": [
+      "Event occurs → all subscribed clients receive update within defined latency",
+      "Client disconnects and reconnects → receives missed updates or current state",
+      "Multiple clients connected → update broadcast to all simultaneously",
+      "High frequency updates → UI updates smoothly without flickering or lag",
+      "No event for extended period → connection kept alive (heartbeat)"
+    ]
+  },
+  {
+    "id": "TK019",
+    "category": "Scheduling",
+    "pattern": "Scheduling, booking, and calendar operations",
+    "description": "Testing time slot selection, conflict detection, reminders, and cancellation",
+    "applicable_keywords": ["schedule", "booking", "appointment", "calendar", "timetable", "slot", "reserve"],
+    "test_strategies": [
+      "Book available slot → confirmed, slot marked as taken",
+      "Book already-taken slot → conflict error, alternative slots suggested",
+      "Cancel booking → slot freed, cancellation confirmation sent",
+      "Booking reminder sent at configured time before appointment",
+      "Recurring schedule created → all instances appear correctly in calendar"
+    ]
+  },
+  {
+    "id": "TK020",
+    "category": "Error Handling",
+    "pattern": "System error handling and graceful degradation",
+    "description": "Testing error states, user-friendly messages, and system recovery",
+    "applicable_keywords": ["error", "exception", "failure", "unavailable", "retry", "fallback", "recovery"],
+    "test_strategies": [
+      "Server error (500) → user-friendly error page, no stack trace exposed",
+      "Network failure during operation → progress not lost, retry option offered",
+      "Required external service down → graceful fallback, user informed",
+      "Timeout on long operation → timeout message with option to retry",
+      "Concurrent conflicting writes → one succeeds, other gets conflict resolution prompt"
+    ]
+  },
+  {
+    "id": "TK021",
+    "category": "Data Export",
+    "pattern": "Data export and download operations",
+    "description": "Testing bulk data export with format correctness, completeness, and access control",
+    "applicable_keywords": ["export", "download", "backup", "extract", "dump", "transfer"],
+    "test_strategies": [
+      "Export all data → file contains complete records, no truncation",
+      "Export with filter applied → only matching records in file",
+      "Unauthorized user attempts export → access denied",
+      "Export of large dataset → chunked or streamed, no memory error",
+      "Exported file opened in target application (Excel, etc.) → renders correctly"
+    ]
+  },
+  {
+    "id": "TK022",
+    "category": "Concurrency",
+    "pattern": "Concurrent access and transaction integrity",
+    "description": "Testing data consistency when multiple users access or modify the same resource",
+    "applicable_keywords": ["concurrent", "simultaneous", "parallel", "transaction", "lock", "race condition"],
+    "test_strategies": [
+      "Two users edit same record simultaneously → last-write-wins or conflict detected",
+      "Multiple users book same slot simultaneously → only one succeeds",
+      "Concurrent fund transfers → total balance consistent, no double spend",
+      "Bulk operation under concurrent access → atomic completion or rollback",
+      "Read during write operation → consistent snapshot returned"
+    ]
+  },
+  {
+    "id": "TK023",
+    "category": "Accessibility & UI",
+    "pattern": "UI accessibility and responsiveness",
+    "description": "Testing keyboard navigation, screen reader support, and mobile responsiveness",
+    "applicable_keywords": ["accessibility", "wcag", "responsive", "mobile", "keyboard", "screen reader", "ui"],
+    "test_strategies": [
+      "All interactive elements reachable via keyboard tab navigation",
+      "Screen reader announces element labels and state changes correctly",
+      "UI renders correctly on mobile (320px), tablet (768px), desktop (1280px)",
+      "Touch targets meet minimum size requirements on mobile",
+      "Colour contrast ratio meets WCAG AA standard (4.5:1 for normal text)"
+    ]
+  },
+  {
+    "id": "TK024",
+    "category": "Availability & Uptime",
+    "pattern": "System availability and recovery testing",
+    "description": "Testing uptime guarantees, failover behaviour, and recovery time objectives",
+    "applicable_keywords": ["uptime", "availability", "99", "downtime", "failover", "recovery", "sla"],
+    "test_strategies": [
+      "Primary server fails → failover to backup within defined RTO",
+      "System monitored continuously → downtime detected and alerted within SLA",
+      "Scheduled maintenance → users notified in advance, maintenance page shown",
+      "Recovery after crash → no data loss beyond defined RPO",
+      "Load balancer distributes traffic → no single point of failure under load"
+    ]
+  },
+  {
+    "id": "TK025",
+    "category": "Audit & Logging",
+    "pattern": "Audit trail and system logging",
+    "description": "Testing that user actions and system events are logged with correct details for traceability",
+    "applicable_keywords": ["audit", "log", "track", "history", "trail", "compliance", "monitor"],
+    "test_strategies": [
+      "User performs action → log entry created with timestamp, user ID, action type",
+      "Failed login attempt → logged with IP address and timestamp",
+      "Data modification → before and after values captured in audit log",
+      "Log access restricted to admin roles only",
+      "Logs retained for defined compliance period, older entries archived"
+    ]
+  }
+]
