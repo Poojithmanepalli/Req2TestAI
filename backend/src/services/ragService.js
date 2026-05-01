@@ -1,77 +1,145 @@
-const OpenAI = require("openai");
+const OpenAI   = require("openai");
+const { Pinecone } = require("@pinecone-database/pinecone");
 const knowledge = require("../data/testingKnowledge.json");
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const pc     = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 
-// In-memory vector store — embedded once at startup
-let embeddedKnowledge = null;
+const INDEX_NAME     = "testing-knowledge";
+const EMBEDDING_MODEL = "text-embedding-3-small";
+const DIMENSION      = 1536;
 
-function cosineSimilarity(a, b) {
-  let dot = 0, magA = 0, magB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot  += a[i] * b[i];
-    magA += a[i] * a[i];
-    magB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
+let pineconeIndex = null;
+let initialized   = false;
 
+// ---------- INIT ----------
 async function initRAG() {
-  if (embeddedKnowledge) return;
+  if (initialized) return;
 
-  console.log("[RAG] Initializing knowledge base embeddings...");
+  console.log("[RAG] Connecting to Pinecone...");
 
-  const texts = knowledge.map(k =>
-    `${k.pattern}: ${k.description}. Test strategies: ${k.test_strategies.join(". ")}`
-  );
+  // Create index if it doesn't exist yet
+  const { indexes } = await pc.listIndexes();
+  const exists = indexes?.some(i => i.name === INDEX_NAME);
 
-  const response = await client.embeddings.create({
-    model: "text-embedding-3-small",
-    input: texts
-  });
+  if (!exists) {
+    console.log("[RAG] Creating Pinecone index...");
+    await pc.createIndex({
+      name:      INDEX_NAME,
+      dimension: DIMENSION,
+      metric:    "cosine",
+      spec: {
+        serverless: { cloud: "aws", region: "us-east-1" }
+      }
+    });
 
-  embeddedKnowledge = knowledge.map((k, i) => ({
-    ...k,
-    embedding: response.data[i].embedding
-  }));
+    // Wait until index is ready
+    let ready = false;
+    while (!ready) {
+      const desc = await pc.describeIndex(INDEX_NAME);
+      ready = desc.status?.ready;
+      if (!ready) await new Promise(r => setTimeout(r, 1500));
+    }
+    console.log("[RAG] Pinecone index created and ready");
+  }
 
-  console.log(`[RAG] Loaded ${embeddedKnowledge.length} knowledge entries`);
+  pineconeIndex = pc.index(INDEX_NAME);
+
+  // Upsert knowledge base if not already stored
+  const stats      = await pineconeIndex.describeIndexStats();
+  const storedCount = stats.totalRecordCount ?? 0;
+
+  if (storedCount < knowledge.length) {
+    console.log(`[RAG] Upserting ${knowledge.length} entries to Pinecone...`);
+
+    const texts = knowledge.map(k =>
+      `${k.pattern}: ${k.description}. Test strategies: ${k.test_strategies.join(". ")}`
+    );
+
+    const embRes = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: texts
+    });
+
+    const vectors = knowledge.map((k, i) => ({
+      id:     k.id,
+      values: embRes.data[i].embedding,
+      metadata: {
+        category:       k.category,
+        pattern:        k.pattern,
+        description:    k.description,
+        test_strategies: k.test_strategies.join(" | ")
+      }
+    }));
+
+    // Upsert in batches of 100 (Pinecone limit)
+    for (let i = 0; i < vectors.length; i += 100) {
+      await pineconeIndex.upsert(vectors.slice(i, i + 100));
+    }
+
+    console.log(`[RAG] ${vectors.length} vectors stored in Pinecone`);
+  } else {
+    console.log(`[RAG] Pinecone ready — ${storedCount} vectors already stored`);
+  }
+
+  initialized = true;
 }
 
+// ---------- SINGLE RETRIEVE ----------
 async function retrieveTestPatterns(requirementText, topK = 3) {
-  if (!embeddedKnowledge) await initRAG();
+  if (!initialized) await initRAG();
 
-  const embRes = await client.embeddings.create({
-    model: "text-embedding-3-small",
+  const embRes = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
     input: [requirementText]
   });
 
-  const reqEmbedding = embRes.data[0].embedding;
+  const results = await pineconeIndex.query({
+    vector:          embRes.data[0].embedding,
+    topK,
+    includeMetadata: true
+  });
 
-  return embeddedKnowledge
-    .map(k => ({ ...k, score: cosineSimilarity(reqEmbedding, k.embedding) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+  return results.matches.map(m => ({
+    id:             m.id,
+    score:          m.score,
+    category:       m.metadata.category,
+    pattern:        m.metadata.pattern,
+    description:    m.metadata.description,
+    test_strategies: String(m.metadata.test_strategies).split(" | ")
+  }));
 }
 
-// Batch retrieval — runs all embeddings in one API call for efficiency
+// ---------- BATCH RETRIEVE ----------
+// Embeds all requirements in ONE API call, then queries Pinecone in parallel
 async function retrieveTestPatternsBatch(requirements, topK = 2) {
-  if (!embeddedKnowledge) await initRAG();
+  if (!initialized) await initRAG();
 
-  const texts = requirements.map(r => r.text);
-
-  const embRes = await client.embeddings.create({
-    model: "text-embedding-3-small",
-    input: texts
+  const embRes = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input: requirements.map(r => r.text)
   });
 
-  return requirements.map((_, i) => {
-    const reqEmbedding = embRes.data[i].embedding;
-    return embeddedKnowledge
-      .map(k => ({ ...k, score: cosineSimilarity(reqEmbedding, k.embedding) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-  });
+  const queryResults = await Promise.all(
+    embRes.data.map(e =>
+      pineconeIndex.query({
+        vector:          e.embedding,
+        topK,
+        includeMetadata: true
+      })
+    )
+  );
+
+  return queryResults.map(r =>
+    r.matches.map(m => ({
+      id:             m.id,
+      score:          m.score,
+      category:       m.metadata.category,
+      pattern:        m.metadata.pattern,
+      description:    m.metadata.description,
+      test_strategies: String(m.metadata.test_strategies).split(" | ")
+    }))
+  );
 }
 
 module.exports = { initRAG, retrieveTestPatterns, retrieveTestPatternsBatch };
