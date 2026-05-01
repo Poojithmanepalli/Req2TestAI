@@ -79,7 +79,7 @@ async function processFile(file, jobId) {
     // Hand off to the agentic pipeline — agent calls tools autonomously
     const result = await runAgent(
       chunks,
-      (percent, message) => sendSSE(jobId, { type: "progress", percent, message }),
+      (percent, message, step) => sendSSE(jobId, { type: "progress", percent, message, step }),
       start
     );
 

@@ -7,6 +7,7 @@ export default function UploadPage({ onResult }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
+  const [agentStep, setAgentStep] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef();
 
@@ -54,6 +55,7 @@ export default function UploadPage({ onResult }) {
           if (data.type === 'progress') {
             setProgress(data.percent);
             setProgressMessage(data.message);
+            if (data.step) setAgentStep(data.step);
           } else if (data.type === 'complete') {
             setProgress(100);
             setProgressMessage('Done!');
@@ -120,18 +122,33 @@ export default function UploadPage({ onResult }) {
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${progress}%` }} />
             </div>
+
+            {/* Agent Activity Panel */}
+            {agentStep && (
+              <div className="agent-activity-panel">
+                <span className="agent-pulse" />
+                <span className="agent-activity-label">
+                  🤖 Agent →&nbsp;
+                  {agentStep === 'extract'  && 'Extracting & deduplicating requirements'}
+                  {agentStep === 'coverage' && 'Analyzing coverage and identifying gaps'}
+                  {agentStep === 'generate' && 'Generating RAG-enhanced test cases'}
+                  {agentStep === 'compile'  && 'Compiling final report'}
+                </span>
+              </div>
+            )}
+
             <div className="progress-steps">
               <div className={`progress-step ${progress >= 25 ? 'step-done' : progress >= 10 ? 'step-active' : ''}`}>
-                <span className="step-icon">📄</span> Parsing document...
+                <span className="step-icon">📄</span> Parsing document
               </div>
-              <div className={`progress-step ${progress >= 50 ? 'step-done' : progress >= 25 ? 'step-active' : ''}`}>
-                <span className="step-icon">🧠</span> Extracting requirements...
+              <div className={`progress-step ${agentStep === 'coverage' || agentStep === 'generate' || agentStep === 'compile' || progress >= 55 ? 'step-done' : agentStep === 'extract' || progress >= 25 ? 'step-active' : ''}`}>
+                <span className="step-icon">🧠</span> Extracting requirements
               </div>
-              <div className={`progress-step ${progress >= 65 ? 'step-done' : progress >= 55 ? 'step-active' : ''}`}>
-                <span className="step-icon">📊</span> Analyzing coverage...
+              <div className={`progress-step ${agentStep === 'generate' || agentStep === 'compile' || progress >= 65 ? 'step-done' : agentStep === 'coverage' || progress >= 55 ? 'step-active' : ''}`}>
+                <span className="step-icon">📊</span> Analyzing coverage
               </div>
-              <div className={`progress-step ${progress >= 90 ? 'step-done' : progress >= 65 ? 'step-active' : ''}`}>
-                <span className="step-icon">⚙️</span> Generating test cases...
+              <div className={`progress-step ${agentStep === 'compile' || progress >= 90 ? 'step-done' : agentStep === 'generate' || progress >= 65 ? 'step-active' : ''}`}>
+                <span className="step-icon">⚙️</span> Generating test cases
               </div>
             </div>
           </div>

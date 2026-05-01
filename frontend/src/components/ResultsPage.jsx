@@ -14,8 +14,10 @@ const StatCard = ({ icon, value, label, colorClass }) => (
 );
 
 export default function ResultsPage({ data, onBack }) {
-  const { stats, modules, processingTime, coverageScore, missingRequirements } = data;
+  const { stats, modules, processingTime, coverageScore, missingRequirements, similarRequirements = [], rtm = [] } = data;
   const [showMissing, setShowMissing] = useState(false);
+  const [showSimilar, setShowSimilar] = useState(true);
+  const [showRTM, setShowRTM] = useState(false);
 
   const rawScore = String(coverageScore || '0');
   const match = rawScore.match(/\d+/);
@@ -140,6 +142,37 @@ export default function ResultsPage({ data, onBack }) {
           )}
         </div>
 
+        {/* ── Similarity Warning ── */}
+        {similarRequirements.length > 0 && (
+          <div className="similarity-warning-card">
+            <div className="similarity-header" onClick={() => setShowSimilar(p => !p)}>
+              <div className="similarity-header-left">
+                <span className="similarity-icon">⚠</span>
+                <div>
+                  <p className="card-section-label">Near-Duplicate Requirements Detected</p>
+                  <h3 className="similarity-count-text">{similarRequirements.length} Similar Pair{similarRequirements.length !== 1 ? 's' : ''}</h3>
+                  <p className="similarity-hint">These requirements overlap significantly — consider merging or clarifying them</p>
+                </div>
+              </div>
+              <span className="missing-toggle-btn">{showSimilar ? '▲ Hide' : '▼ Show'}</span>
+            </div>
+            {showSimilar && (
+              <div className="similarity-list">
+                {similarRequirements.map((pair, i) => (
+                  <div key={i} className="similarity-pair">
+                    <div className="similarity-badge">{pair.similarity}% similar</div>
+                    <div className="similarity-reqs">
+                      <div className="sim-req"><span className="sim-req-id">{pair.req1Id}</span> {pair.text1}</div>
+                      <div className="sim-divider">vs</div>
+                      <div className="sim-req"><span className="sim-req-id">{pair.req2Id}</span> {pair.text2}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Modules ── */}
         <div className="modules-section">
           <div className="modules-section-header">
@@ -152,6 +185,53 @@ export default function ResultsPage({ data, onBack }) {
             ))}
           </div>
         </div>
+
+        {/* ── RTM ── */}
+        {rtm.length > 0 && (
+          <div className="rtm-section">
+            <div className="rtm-section-header" onClick={() => setShowRTM(p => !p)}>
+              <div>
+                <h2 className="modules-section-title">Requirement Traceability Matrix</h2>
+                <span className="modules-section-sub">{rtm.length} requirements · {rtm.reduce((s, r) => s + r.testCaseCount, 0)} total test cases</span>
+              </div>
+              <button className="rtm-toggle-btn">{showRTM ? '▲ Collapse' : '▼ Expand RTM'}</button>
+            </div>
+            {showRTM && (
+              <div className="rtm-table-wrap">
+                <table className="rtm-table">
+                  <thead>
+                    <tr>
+                      <th>REQ ID</th>
+                      <th>Module</th>
+                      <th>Priority</th>
+                      <th>Type</th>
+                      <th>Requirement</th>
+                      <th>TC Count</th>
+                      <th>Test Case IDs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rtm.map((row) => (
+                      <tr key={row.reqId}>
+                        <td className="rtm-req-id">{row.reqId}</td>
+                        <td>{row.module}</td>
+                        <td>
+                          <span className={`rtm-priority-badge priority-${row.priority?.toLowerCase()}`}>
+                            {row.priority}
+                          </span>
+                        </td>
+                        <td className="rtm-type">{row.type}</td>
+                        <td className="rtm-req-text">{row.requirement}</td>
+                        <td className="rtm-tc-count">{row.testCaseCount}</td>
+                        <td className="rtm-tc-ids">{row.tcIds.join(', ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>

@@ -197,4 +197,39 @@ function formatMemoryMatch(k) {
   };
 }
 
-module.exports = { initRAG, retrieveTestPatterns, retrieveTestPatternsBatch };
+// ---------- SIMILARITY DETECTION ----------
+async function findSimilarRequirements(requirements, threshold = 0.82) {
+  if (requirements.length < 2) return [];
+
+  try {
+    const embRes = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: requirements.map(r => r.text)
+    });
+
+    const embeddings = embRes.data.map(e => e.embedding);
+    const pairs = [];
+
+    for (let i = 0; i < requirements.length; i++) {
+      for (let j = i + 1; j < requirements.length; j++) {
+        const sim = cosineSimilarity(embeddings[i], embeddings[j]);
+        if (sim >= threshold && sim < 0.98) {
+          pairs.push({
+            req1Id:     requirements[i].id,
+            req2Id:     requirements[j].id,
+            text1:      requirements[i].text,
+            text2:      requirements[j].text,
+            similarity: Math.round(sim * 100)
+          });
+        }
+      }
+    }
+
+    return pairs.sort((a, b) => b.similarity - a.similarity).slice(0, 6);
+  } catch (err) {
+    console.error("[RAG] Similarity check failed:", err.message);
+    return [];
+  }
+}
+
+module.exports = { initRAG, retrieveTestPatterns, retrieveTestPatternsBatch, findSimilarRequirements };

@@ -10,7 +10,7 @@ const {
 const { deduplicateRequirements } = require("../utils/deduplicate");
 const { isValidRequirement }      = require("../utils/requirementFilter");
 const { classifyModule }          = require("./moduleClassifier");
-const { initRAG }                 = require("./ragService");
+const { initRAG, findSimilarRequirements } = require("./ragService");
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -167,7 +167,7 @@ async function toolGenerateTestCases(requirements) {
   return results;
 }
 
-function compileFinalReport(results, coverageScore, missingRequirements, processingStart) {
+function compileFinalReport(results, coverageScore, missingRequirements, similarRequirements, processingStart) {
   const grouped = {};
   results.forEach(r => {
     if (!grouped[r.module]) grouped[r.module] = [];
@@ -180,9 +180,20 @@ function compileFinalReport(results, coverageScore, missingRequirements, process
     items:  grouped[m]
   }));
 
+  // Requirement Traceability Matrix
+  const rtm = results.map(r => ({
+    reqId:         r.id,
+    module:        r.module,
+    priority:      r.priority,
+    type:          r.type,
+    requirement:   r.requirement,
+    testCaseCount: r.testCases.length,
+    tcIds:         r.testCases.map((_, i) => `${r.id}_TC${i + 1}`)
+  }));
+
   return {
-    message:         "Agentic AI pipeline complete",
-    processingTime:  `${Date.now() - processingStart} ms`,
+    message:             "Agentic AI pipeline complete",
+    processingTime:      `${Date.now() - processingStart} ms`,
     stats: {
       total:         results.length,
       functional:    results.filter(r => r.type === "functional").length,
@@ -190,7 +201,9 @@ function compileFinalReport(results, coverageScore, missingRequirements, process
     },
     modules,
     coverageScore,
-    missingRequirements
+    missingRequirements,
+    similarRequirements: similarRequirements || [],
+    rtm
   };
 }
 
@@ -200,11 +213,12 @@ async function runAgent(chunks, sendProgress, processingStart) {
 
   // All document data lives here — agent NEVER carries data in tool arguments
   const state = {
-    chunks,                  // pre-loaded before agent starts
-    requirements:        [],
-    coverageScore:       0,
-    missingRequirements: [],
-    results:             []
+    chunks,                   // pre-loaded before agent starts
+    requirements:         [],
+    coverageScore:        0,
+    missingRequirements:  [],
+    similarRequirements:  [],
+    results:              []
   };
 
   const messages = [
@@ -246,12 +260,14 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
       let feedback; // only lightweight summaries go back to agent
 
       if (name === "extract_and_clean_requirements") {
-        sendProgress(30, "Extracting & deduplicating requirements...");
-        // Uses state.chunks — agent never needed to pass them
+        sendProgress(30, "Extracting & deduplicating requirements...", "extract");
         state.requirements = await toolExtractAndClean(state.chunks);
+        // Run similarity check in parallel after extraction
+        state.similarRequirements = await findSimilarRequirements(state.requirements);
         feedback = {
           status: "done",
           total:  state.requirements.length,
+          similarPairsFound: state.similarRequirements.length,
           types: {
             functional:    state.requirements.filter(r => r.type === "functional").length,
             nonFunctional: state.requirements.filter(r => r.type === "non-functional").length
@@ -259,7 +275,7 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
         };
 
       } else if (name === "analyze_coverage_and_gaps") {
-        sendProgress(55, "Analyzing coverage & identifying gaps...");
+        sendProgress(55, "Analyzing coverage & identifying gaps...", "coverage");
         const res = await toolAnalyzeCoverageAndGaps(state.requirements);
         state.coverageScore       = res.coverageScore;
         state.missingRequirements = res.missingRequirements;
@@ -270,7 +286,7 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
         };
 
       } else if (name === "generate_test_cases") {
-        sendProgress(65, "Generating RAG-enhanced test cases...");
+        sendProgress(65, "Generating RAG-enhanced test cases...", "generate");
         state.results = await toolGenerateTestCases(state.requirements);
         feedback = {
           status:           "done",
@@ -279,11 +295,12 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
         };
 
       } else if (name === "compile_final_report") {
-        sendProgress(90, "Compiling final report...");
+        sendProgress(90, "Compiling final report...", "compile");
         const report = compileFinalReport(
           state.results,
           state.coverageScore,
           state.missingRequirements,
+          state.similarRequirements,
           processingStart
         );
         messages.push({
@@ -307,6 +324,7 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
     state.results,
     state.coverageScore,
     state.missingRequirements,
+    state.similarRequirements,
     processingStart
   );
 }

@@ -244,6 +244,38 @@
   flex-shrink: 0;
 }
 
+/* ── Agent Activity Panel ───────────────────────────────── */
+.agent-activity-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 8px 12px;
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  border-radius: 8px;
+}
+
+.agent-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366F1;
+  flex-shrink: 0;
+  animation: agentPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+.agent-activity-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4338CA;
+}
+
 /* ── Report Includes ────────────────────────────────────── */
 .report-includes {
   margin-top: 16px;

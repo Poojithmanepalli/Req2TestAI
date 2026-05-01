@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 
 export function exportToExcel(data) {
-  const { modules, stats, processingTime, coverageScore, missingRequirements } = data;
+  const { modules, stats, processingTime, coverageScore, missingRequirements, similarRequirements = [], rtm = [] } = data;
 
   const wb = XLSX.utils.book_new();
 
@@ -77,6 +77,37 @@ export function exportToExcel(data) {
   ];
 
   XLSX.utils.book_append_sheet(wb, ws2, 'Test Cases');
+
+  // ── Sheet 4: Traceability Matrix ──────────────────────────
+  if (rtm.length > 0) {
+    const rtmHeaders = ['REQ ID', 'Module', 'Priority', 'Type', 'Requirement', 'TC Count', 'Test Case IDs'];
+    const rtmRows = rtm.map(r => [
+      r.reqId,
+      r.module,
+      r.priority,
+      r.type,
+      r.requirement,
+      r.testCaseCount,
+      r.tcIds.join(', ')
+    ]);
+    const ws4 = XLSX.utils.aoa_to_sheet([rtmHeaders, ...rtmRows]);
+    ws4['!cols'] = [
+      { wch: 10 }, { wch: 18 }, { wch: 10 }, { wch: 16 },
+      { wch: 60 }, { wch: 9 }, { wch: 40 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws4, 'Traceability Matrix');
+  }
+
+  // ── Sheet 5: Similar Requirements ────────────────────────
+  if (similarRequirements.length > 0) {
+    const simHeaders = ['Req 1 ID', 'Req 1 Text', 'Req 2 ID', 'Req 2 Text', 'Similarity %'];
+    const simRows = similarRequirements.map(p => [
+      p.req1Id, p.text1, p.req2Id, p.text2, `${p.similarity}%`
+    ]);
+    const ws5 = XLSX.utils.aoa_to_sheet([simHeaders, ...simRows]);
+    ws5['!cols'] = [{ wch: 10 }, { wch: 55 }, { wch: 10 }, { wch: 55 }, { wch: 13 }];
+    XLSX.utils.book_append_sheet(wb, ws5, 'Similar Requirements');
+  }
 
   XLSX.writeFile(wb, 'Req2TestAI_Report.xlsx');
 }
