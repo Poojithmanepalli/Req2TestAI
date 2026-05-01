@@ -51,6 +51,8 @@ async function initRAG() {
 
   if (storedCount < knowledge.length) {
     console.log(`[RAG] Upserting ${knowledge.length} entries to Pinecone...`);
+    // ✅ DEBUG HERE
+    console.log("[RAG] Knowledge entries:", knowledge.length);
 
     const texts = knowledge.map(k =>
       `${k.pattern}: ${k.description}. Test strategies: ${k.test_strategies.join(". ")}`
@@ -73,8 +75,18 @@ async function initRAG() {
     }));
 
     // Upsert in batches of 100 (Pinecone limit)
-    for (let i = 0; i < vectors.length; i += 100) {
-      await pineconeIndex.upsert(vectors.slice(i, i + 100));
+    if (!vectors || vectors.length === 0) {
+      console.log("[RAG] ⚠️ No vectors to upsert — skipping");
+    } else {
+      for (let i = 0; i < vectors.length; i += 100) {
+        const batch = vectors.slice(i, i + 100);
+
+        if (batch.length > 0) {
+          await pineconeIndex.upsert(batch);
+        }
+      }
+
+      console.log(`[RAG] ${vectors.length} vectors stored in Pinecone`);
     }
 
     console.log(`[RAG] ${vectors.length} vectors stored in Pinecone`);
