@@ -129,10 +129,12 @@ export default function UploadPage({ onResult }) {
                 <span className="agent-pulse" />
                 <span className="agent-activity-label">
                   🤖 Agent →&nbsp;
-                  {agentStep === 'extract'  && 'Extracting & deduplicating requirements'}
-                  {agentStep === 'coverage' && 'Analyzing coverage and identifying gaps'}
-                  {agentStep === 'generate' && 'Generating RAG-enhanced test cases'}
-                  {agentStep === 'compile'  && 'Compiling final report'}
+                  {agentStep === 'extract'   && 'Extracting & deduplicating requirements'}
+                  {agentStep === 'reextract' && 'Re-extracting with finer chunks (low coverage detected)'}
+                  {agentStep === 'coverage'  && 'Analyzing coverage and identifying gaps'}
+                  {agentStep === 'generate'  && 'Generating RAG-enhanced test cases'}
+                  {agentStep === 'retry'     && 'Retrying weak test cases for better quality'}
+                  {agentStep === 'compile'   && 'Compiling final report'}
                 </span>
               </div>
             )}

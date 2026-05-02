@@ -15,14 +15,12 @@ const { initRAG, findSimilarRequirements } = require("./ragService");
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ---------- TOOL DEFINITIONS ----------
-// All document data lives in server-side state — agent only orchestrates (decides what to call next).
-// Tools take only a "reason" string so the agent never needs to carry large data payloads.
 const TOOLS = [
   {
     type: "function",
     function: {
       name: "extract_and_clean_requirements",
-      description: "Extract software requirements from the pre-loaded SRS document, remove noise, and deduplicate semantically. Always call this first.",
+      description: "Extract software requirements from the pre-loaded SRS document, remove noise, and deduplicate. Always call this first.",
       parameters: {
         type: "object",
         properties: {
@@ -35,8 +33,22 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "reextract_with_finer_chunks",
+      description: "Re-extract requirements by splitting the document into finer chunks to recover missed requirements. Call this ONLY ONCE if coverage score comes back below 50%. Do not call if coverage >= 50%.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: { type: "string", description: "Why coverage was low and what you expect to recover" }
+        },
+        required: ["reason"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "analyze_coverage_and_gaps",
-      description: "Analyze how well the extracted requirements cover the system and identify commonly missing requirements. Call after extract_and_clean_requirements.",
+      description: "Analyze how well the extracted requirements cover the system and identify missing requirements. Call after extract_and_clean_requirements (or after reextract_with_finer_chunks if used).",
       parameters: {
         type: "object",
         properties: {
@@ -50,7 +62,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "generate_test_cases",
-      description: "Generate structured test cases for all extracted requirements using RAG-retrieved testing patterns. Call after analyze_coverage_and_gaps.",
+      description: "Generate structured test cases for all requirements using RAG-retrieved testing patterns. Call after analyze_coverage_and_gaps.",
       parameters: {
         type: "object",
         properties: {
@@ -63,12 +75,26 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "compile_final_report",
-      description: "Compile all results into the final structured report. Call this last after generate_test_cases.",
+      name: "retry_weak_test_cases",
+      description: "Retry test case generation for requirements that received 1 or fewer test cases. Call this ONLY ONCE if more than 20% of requirements have weak coverage after generate_test_cases. Do not call if most requirements have adequate test cases.",
       parameters: {
         type: "object",
         properties: {
-          summary: { type: "string", description: "One-sentence summary of the overall analysis" }
+          reason: { type: "string", description: "How many requirements were weak and what you expect to improve" }
+        },
+        required: ["reason"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "compile_final_report",
+      description: "Compile all results into the final structured report. Call this last — after generate_test_cases and optionally after retry_weak_test_cases.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "One-sentence summary of the analysis and any corrective steps taken" }
         },
         required: ["summary"]
       }
@@ -82,6 +108,22 @@ function assignPriority(text) {
   if (t.includes("must") || t.includes("critical")) return "HIGH";
   if (t.includes("should")) return "MEDIUM";
   return "LOW";
+}
+
+// Split each chunk into smaller pieces for finer extraction
+function makeFinerChunks(chunks) {
+  const finer = [];
+  for (const chunk of chunks) {
+    const words = chunk.split(" ");
+    if (words.length > 120) {
+      const mid = Math.floor(words.length / 2);
+      finer.push(words.slice(0, mid).join(" "));
+      finer.push(words.slice(mid).join(" "));
+    } else {
+      finer.push(chunk);
+    }
+  }
+  return finer;
 }
 
 // ---------- TOOL IMPLEMENTATIONS ----------
@@ -130,13 +172,12 @@ async function toolGenerateTestCases(requirements) {
     batches.push(requirements.slice(i, i + batchSize));
   }
 
-  // All batches use RAG-enhanced generation, run in parallel
   const batchOutputs = await Promise.all(batches.map(batch => generateTestCasesBatchRAG(batch)));
 
   const results = [];
   for (let b = 0; b < batches.length; b++) {
-    const batch  = batches[b];
-    const aiMap  = batchOutputs[b];
+    const batch = batches[b];
+    const aiMap = batchOutputs[b];
 
     const items = await Promise.all(batch.map(async (req, j) => {
       const ai = aiMap?.[String(j + 1)];
@@ -167,6 +208,27 @@ async function toolGenerateTestCases(requirements) {
   return results;
 }
 
+// Retry only the weak requirements individually with a focused prompt
+async function toolRetryWeakTestCases(results) {
+  const weak = results.filter(r => r.testCases.length <= 1);
+  if (weak.length === 0) return results;
+
+  const retried = await Promise.all(
+    weak.map(async (item) => {
+      const newTCs = await generateTestCasesAI(item.requirement);
+      if (newTCs && newTCs.length > item.testCases.length) {
+        return { ...item, testCases: newTCs.slice(0, 5) };
+      }
+      return item;
+    })
+  );
+
+  const improvedMap = {};
+  retried.forEach(item => { improvedMap[item.id] = item; });
+
+  return results.map(r => improvedMap[r.id] || r);
+}
+
 function compileFinalReport(results, coverageScore, missingRequirements, similarRequirements, processingStart) {
   const grouped = {};
   results.forEach(r => {
@@ -180,7 +242,6 @@ function compileFinalReport(results, coverageScore, missingRequirements, similar
     items:  grouped[m]
   }));
 
-  // Requirement Traceability Matrix
   const rtm = results.map(r => ({
     reqId:         r.id,
     module:        r.module,
@@ -211,29 +272,38 @@ function compileFinalReport(results, coverageScore, missingRequirements, similar
 async function runAgent(chunks, sendProgress, processingStart) {
   await initRAG();
 
-  // All document data lives here — agent NEVER carries data in tool arguments
   const state = {
-    chunks,                   // pre-loaded before agent starts
-    requirements:         [],
-    coverageScore:        0,
-    missingRequirements:  [],
-    similarRequirements:  [],
-    results:              []
+    chunks,
+    requirements:        [],
+    coverageScore:       0,
+    missingRequirements: [],
+    similarRequirements: [],
+    results:             [],
+    hasReextracted:      false,  // guard: prevent infinite reextract loop
+    hasRetriedWeak:      false   // guard: prevent infinite retry loop
   };
 
   const messages = [
     {
       role: "system",
       content: `You are an expert QA automation agent that analyses Software Requirements Specification (SRS) documents.
-The SRS document has already been parsed and pre-loaded (${chunks.length} text chunks). You do NOT need to pass any document data — just call the tools in order.
+The SRS document is pre-loaded (${chunks.length} chunks). All data is server-side — just call tools.
 
-Call tools in this exact order:
-1. extract_and_clean_requirements
-2. analyze_coverage_and_gaps
-3. generate_test_cases
-4. compile_final_report
+Follow this decision logic:
 
-Do not skip or repeat any step. Each tool uses the output of the previous step automatically.`
+1. Call extract_and_clean_requirements first.
+
+2. Call analyze_coverage_and_gaps.
+   - If coverage score < 50%: call reextract_with_finer_chunks (ONCE only) to recover missed requirements, then call analyze_coverage_and_gaps again.
+   - If coverage >= 50%: proceed to the next step directly.
+
+3. Call generate_test_cases.
+   - After seeing the result: if more than 20% of requirements have weak test cases (≤1 test case), call retry_weak_test_cases (ONCE only) to improve them.
+   - Otherwise: proceed to compile.
+
+4. Call compile_final_report last.
+
+Never call reextract_with_finer_chunks or retry_weak_test_cases more than once each. Always finish with compile_final_report.`
     },
     {
       role: "user",
@@ -241,7 +311,7 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
     }
   ];
 
-  for (let iteration = 0; iteration < 10; iteration++) {
+  for (let iteration = 0; iteration < 15; iteration++) {
     const response = await client.chat.completions.create({
       model:       "gpt-4o-mini",
       messages,
@@ -257,42 +327,96 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
 
     for (const toolCall of message.tool_calls) {
       const name = toolCall.function.name;
-      let feedback; // only lightweight summaries go back to agent
+      let feedback;
 
       if (name === "extract_and_clean_requirements") {
-        sendProgress(30, "Extracting & deduplicating requirements...", "extract");
-        state.requirements = await toolExtractAndClean(state.chunks);
-        // Run similarity check in parallel after extraction
+        sendProgress(25, "Extracting & deduplicating requirements...", "extract");
+        state.requirements        = await toolExtractAndClean(state.chunks);
         state.similarRequirements = await findSimilarRequirements(state.requirements);
         feedback = {
-          status: "done",
-          total:  state.requirements.length,
+          status:            "done",
+          total:             state.requirements.length,
           similarPairsFound: state.similarRequirements.length,
           types: {
             functional:    state.requirements.filter(r => r.type === "functional").length,
             nonFunctional: state.requirements.filter(r => r.type === "non-functional").length
-          }
+          },
+          agentNote: state.requirements.length < 5
+            ? "Very few requirements found. Consider calling reextract_with_finer_chunks after coverage check."
+            : "Extraction complete."
         };
+
+      } else if (name === "reextract_with_finer_chunks") {
+        if (state.hasReextracted) {
+          feedback = { status: "skipped", reason: "Already reextracted once. Proceed with existing requirements." };
+        } else {
+          state.hasReextracted  = true;
+          sendProgress(38, "Re-extracting with finer document chunks...", "reextract");
+          const finerChunks     = makeFinerChunks(state.chunks);
+          const newRequirements = await toolExtractAndClean(finerChunks);
+
+          // Merge new requirements with existing, deduplicate by text
+          const existingTexts   = new Set(state.requirements.map(r => r.text.toLowerCase()));
+          const added           = newRequirements.filter(r => !existingTexts.has(r.text.toLowerCase()));
+          const merged          = [...state.requirements, ...added];
+          state.requirements    = merged.map((r, i) => ({ ...r, id: `REQ_${i + 1}` }));
+          state.similarRequirements = await findSimilarRequirements(state.requirements);
+
+          feedback = {
+            status:     "done",
+            chunksUsed: finerChunks.length,
+            newlyFound: added.length,
+            totalNow:   state.requirements.length,
+            agentNote:  `Recovered ${added.length} additional requirements. Now call analyze_coverage_and_gaps again.`
+          };
+        }
 
       } else if (name === "analyze_coverage_and_gaps") {
         sendProgress(55, "Analyzing coverage & identifying gaps...", "coverage");
-        const res = await toolAnalyzeCoverageAndGaps(state.requirements);
+        const res                 = await toolAnalyzeCoverageAndGaps(state.requirements);
         state.coverageScore       = res.coverageScore;
         state.missingRequirements = res.missingRequirements;
         feedback = {
           status:        "done",
           coverageScore: state.coverageScore,
-          gapsFound:     state.missingRequirements.length
+          gapsFound:     state.missingRequirements.length,
+          agentNote:     state.coverageScore < 50 && !state.hasReextracted
+            ? "Coverage is low. Call reextract_with_finer_chunks to recover missed requirements before proceeding."
+            : "Coverage acceptable. Proceed to generate_test_cases."
         };
 
       } else if (name === "generate_test_cases") {
         sendProgress(65, "Generating RAG-enhanced test cases...", "generate");
-        state.results = await toolGenerateTestCases(state.requirements);
+        state.results        = await toolGenerateTestCases(state.requirements);
+        const weakCount      = state.results.filter(r => r.testCases.length <= 1).length;
+        const weakPct        = Math.round((weakCount / state.results.length) * 100);
         feedback = {
           status:           "done",
           testCasesCreated: state.results.reduce((s, r) => s + r.testCases.length, 0),
-          modulesFound:     [...new Set(state.results.map(r => r.module))].length
+          modulesFound:     [...new Set(state.results.map(r => r.module))].length,
+          weakRequirements: weakCount,
+          weakPercent:      `${weakPct}%`,
+          agentNote:        weakPct > 20 && !state.hasRetriedWeak
+            ? `${weakCount} requirements (${weakPct}%) have weak test cases. Call retry_weak_test_cases to improve them.`
+            : "Test case quality is acceptable. Proceed to compile_final_report."
         };
+
+      } else if (name === "retry_weak_test_cases") {
+        if (state.hasRetriedWeak) {
+          feedback = { status: "skipped", reason: "Already retried once. Proceed to compile_final_report." };
+        } else {
+          state.hasRetriedWeak  = true;
+          const weakCount       = state.results.filter(r => r.testCases.length <= 1).length;
+          sendProgress(80, `Retrying ${weakCount} weak requirements for better coverage...`, "retry");
+          state.results         = await toolRetryWeakTestCases(state.results);
+          const stillWeak       = state.results.filter(r => r.testCases.length <= 1).length;
+          feedback = {
+            status:    "done",
+            improved:  weakCount - stillWeak,
+            stillWeak,
+            agentNote: "Retry complete. Now call compile_final_report."
+          };
+        }
 
       } else if (name === "compile_final_report") {
         sendProgress(90, "Compiling final report...", "compile");
@@ -319,7 +443,6 @@ Do not skip or repeat any step. Each tool uses the output of the previous step a
     }
   }
 
-  // Fallback: compile with whatever state we have
   return compileFinalReport(
     state.results,
     state.coverageScore,
